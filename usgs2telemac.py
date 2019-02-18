@@ -18,7 +18,7 @@ import os
 def woking_animate():
     """
     Manage loading wheel.
-    
+
     """
     for c in itertools.cycle(['|', '/', '-', '\\']):
         if done:
@@ -114,7 +114,7 @@ def extract_time_series(fname, col_time=2, col_data=4):
     return t_in_seconds, d
 
 
-def generate_A(fnames, datum):
+def generate_A(fnames, types, datum):
     """
     Generate the matrix before interpolation.
 
@@ -139,6 +139,10 @@ def generate_A(fnames, datum):
         if fname == 'tinley.txt' or fname == 'midlothian.txt' \
                 or fname == 'little_calumet.txt':
             t, d = extract_time_series(fname, 2, 6)
+        if types[i + 1][0] == 'Q':
+            d = d * 0.3048**3 ## convert from cfs to cms
+        elif types[i + 1][0] == 'S':
+            d = d * 0.3048 ## convert from ft to m
         if np.isnan(datum[i]) == False:
             d = d + datum[i]
         A[:len(t), i * 2] = t
@@ -235,7 +239,7 @@ def generate_R(A):
 
 def load_user_input():
     """
-    Load gauging station names, types (Q or H), units and 
+    Load gauging station names, types (Q or H), units and
     datum conversions from user input file.
 
     """
@@ -245,8 +249,8 @@ def load_user_input():
         types = lines[1].replace('\n', '').split(', ')
         units = lines[2].replace('\n', '').split(', ')
         datum = np.asarray(lines[3].split(','), dtype=np.float)
-        types.insert(0,'T')
-        units.insert(0,'s')
+        types.insert(0, 'T')
+        units.insert(0, 's')
     return fnames, types, units, datum
 
 
@@ -262,22 +266,25 @@ def main():
     t.start()
     try:
         fnames, types, units, datum = load_user_input()
-        A = generate_A(fnames, datum)
+        A = generate_A(fnames, types, datum)
         R = generate_R(A)
         h = '#\n' + '\t'.join(types) + '\n' + '\t'.join(units)
-        np.savetxt('liquid_boundary.xls', R, delimiter='\t', 
+        np.savetxt('liquid_boundary.xls', R, delimiter='\t',
                    fmt='%.4f', header=h, comments='')
         done = True
     except TypeError:
         done = True
         print('\rFound TypeError!')
+    except FileNotFoundError:
+        done = True
+        print('\rFound FileNotFoundError!')
     except OSError:
         done = True
-        print('\rFound OSError!')
-    except:
+        print('\rFound other type of OSError!')
+    except BaseException:
         done = True
         print('\rFound other type of error!')
 
+
 if __name__ == "__main__":
     main()
-
