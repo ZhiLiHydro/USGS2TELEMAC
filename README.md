@@ -6,7 +6,7 @@ This Python code is to prepare the liquid boundary file for [TELEMAC](http://www
 
 * Numpy
 * Matplotlib
-* Pandas
+* Pandas >= 0.24.0
 
 ## Usage
 
@@ -29,7 +29,7 @@ Create the user input file as follows:
 Notes:
 * `Q` and `SL` stand for discharge boundary condition and water level boundary condition, respectively.
 * Units are not important in the current version of TELEMAC.
-* `nan` should be put under all the Q boundaries.
+* `nan` should be put under all Q boundaries if unit conversion from cfs to cms is not needed. Otherwise, put the unit conversion factor under all Q boundaries, e.g. from cfs to cms, 0.02831684659.
 
 ### Run
 
