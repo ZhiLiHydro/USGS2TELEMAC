@@ -245,9 +245,9 @@ def load_user_input():
     """
     with open('user_input.csv', 'r') as f:
         lines = f.readlines()
-        fnames = lines[0].replace('\n', '').split(', ')
-        types = lines[1].replace('\n', '').split(', ')
-        units = lines[2].replace('\n', '').split(', ')
+        fnames = lines[0].replace('\n', '').split(',')
+        types = lines[1].replace('\n', '').split(',')
+        units = lines[2].replace('\n', '').split(',')
         datum = np.asarray(lines[3].split(','), dtype=np.float)
         types.insert(0, 'T')
         units.insert(0, 's')
