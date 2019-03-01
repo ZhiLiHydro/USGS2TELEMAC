@@ -22,15 +22,21 @@ Create the user input file as following example:
 
 |gauge1.txt|gauge2.txt|gauge3.txt|...more...|
 |---|---|---|---|
+|4|4|6|8|
 |Q(1)|Q(2)|SL(3)|...more...|
 |m3/s|m3/s|m|...more...|
 |nan|nan|12.34|...more...|
 
 Notes:
-* Line 1: files names. Line 2: boundary types. Line 3: units. Line 4: datum conversion.
+* Line 1: files names. Line 2: number of column where the desired data located in the file. Line 3: boundary types. Line 3: units. Line 4: datum conversion.
 * `Q` and `SL` stand for discharge boundary condition and water level boundary condition, respectively.
 * Units are not important in the current version of TELEMAC.
 * `nan` should be put under all Q boundaries ~~if unit conversion from cfs to cms is not needed. Otherwise, put the unit conversion factor under all Q boundaries, e.g. from cfs to cms, 0.02831684659~~. Now cfs/ft is forced to convert to cms/m by default. The unit of datum conversion should be in m.
+* For Line 2, an example is here:
+
+![a](https://github.com/zhiliuiuc/USGS2TELEMAC/blob/master/data_example.png "data_example")
+
+Based on USGS's output format, the column number 4 is usually the first column of data. So 4 is default value and 4 may be changed to 6, 8, 10, etc.
 
 ### Run
 
