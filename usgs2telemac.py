@@ -81,7 +81,7 @@ def find_longest(fnames):
     return lg
 
 
-def extract_time_series(fname, col_time=2, col_data=4):
+def extract_time_series(fname, col_time, col_data):
     """
     Extract the time series of discharge data
     or gauge height data from one file.
@@ -114,7 +114,7 @@ def extract_time_series(fname, col_time=2, col_data=4):
     return t_in_seconds, d
 
 
-def generate_A(fnames, types, datum):
+def generate_A(fnames, col_num, types, datum):
     """
     Generate the matrix before interpolation.
 
@@ -135,27 +135,16 @@ def generate_A(fnames, types, datum):
     A = np.full((L, len(fnames) * 2), np.nan)
     i = 0
     for fname in fnames:
-        t, d = extract_time_series(fname)
-        if fname == 'tinley.txt' or fname == 'midlothian.txt' \
-                or fname == 'little_calumet.txt':
-            t, d = extract_time_series(fname, 2, 6)
+        t, d = extract_time_series(fname, 2, col_num[i])
         if types[i + 1][0] == 'Q':
-            d = d * 0.3048**3 ## convert from cfs to cms
+            d = d * 0.3048**3  # convert from cfs to cms
         elif types[i + 1][0] == 'S':
-            d = d * 0.3048 ## convert from ft to m
+            d = d * 0.3048  # convert from ft to m
         if np.isnan(datum[i]) == False:
             d = d + datum[i]
         A[:len(t), i * 2] = t
         A[:len(t), i * 2 + 1] = d
         i = i + 1
-
-############### Plot each gauging station ###############
-#        plt.figure(figsize=(12, 3))
-#        plt.title(fname)
-#        plt.plot(t, d)
-#        plt.show()
-############### Plot each gauging station ###############
-
     return A
 
 
@@ -224,14 +213,6 @@ def generate_R(A):
                     index = np.searchsorted(R[:, 0], A[i, (j - 1) * 2])
                     R[index, j] = A[i, j * 2 - 1]
             R[:, j] = interpol(R[:, j])
-
-############### Plot each gauging station ###############
-#            plt.figure(figsize=(12, 3))
-#            plt.plot(R[:, 0], R[:, j], 'o', mfc='none')
-#            plt.plot(A[:, (j - 1) * 2], A[:, j * 2 - 1], 'o-')
-#            plt.show()
-############### Plot each gauging station ###############
-
         else:
             continue
     return R
@@ -246,12 +227,45 @@ def load_user_input():
     with open('user_input.csv', 'r') as f:
         lines = f.readlines()
         fnames = lines[0].replace('\n', '').split(',')
-        types = lines[1].replace('\n', '').split(',')
-        units = lines[2].replace('\n', '').split(',')
-        datum = np.asarray(lines[3].split(','), dtype=np.float)
+        col_num = np.asarray(lines[1].split(','), dtype=np.int)
+        types = lines[2].replace('\n', '').split(',')
+        units = lines[3].replace('\n', '').split(',')
+        datum = np.asarray(lines[4].split(','), dtype=np.float)
         types.insert(0, 'T')
         units.insert(0, 's')
-    return fnames, types, units, datum
+    return fnames, col_num, types, units, datum
+
+
+def plot(R, fnames, types):
+    """
+    Plot all (divided into H and Q two categories).
+
+    """
+    plt.figure(figsize=(10, 8))
+    plt.subplot(2, 1, 1)
+    le = []
+    for i in range(len(fnames)):
+        if types[i + 1][0] == 'S':
+            plt.plot(R[:, 0], R[:, i + 1])
+            le.append(fnames[i])
+    plt.xlabel('Time [s]')
+    plt.ylabel('Water level [m]')
+    plt.grid()
+    plt.legend(le)
+    plt.title('Water levels')
+    plt.subplot(2, 1, 2)
+    le = []
+    for i in range(len(fnames)):
+        if types[i + 1][0] == 'Q':
+            plt.plot(R[:, 0], R[:, i + 1])
+            le.append(fnames[i])
+    plt.xlabel('Time [s]')
+    plt.ylabel('Discharge [cms]')
+    plt.grid()
+    plt.legend(le)
+    plt.title('Discharges')
+    plt.tight_layout()
+    plt.show()
 
 
 def main():
@@ -265,25 +279,22 @@ def main():
     t = threading.Thread(target=woking_animate)
     t.start()
     try:
-        fnames, types, units, datum = load_user_input()
-        A = generate_A(fnames, types, datum)
+        fnames, col_num, types, units, datum = load_user_input()
+        A = generate_A(fnames, col_num, types, datum)
         R = generate_R(A)
         h = '#\n' + '\t'.join(types) + '\n' + '\t'.join(units)
         np.savetxt('liquid_boundary.xls', R, delimiter='\t',
                    fmt='%.4f', header=h, comments='')
-        done = True
     except TypeError:
-        done = True
         print('\rFound TypeError!')
     except FileNotFoundError:
-        done = True
         print('\rFound FileNotFoundError!')
     except OSError:
-        done = True
         print('\rFound other type of OSError!')
     except BaseException:
-        done = True
         print('\rFound other type of error!')
+    done = True
+    plot(R, fnames, types)
 
 
 if __name__ == "__main__":
