@@ -4,9 +4,9 @@ This Python code is to prepare the liquid boundary file for [TELEMAC](http://www
 
 ## To do
 
-According to the [USGS National Water Information System Automated Retrieval FAQ page](https://help.waterdata.usgs.gov/faq/automated-retrievals), "downloading tab delimited data files" method to retrieve water data is an outdated "20th century approach" and is not recommended. Instead, XML/JSON-based approach is the modern way to retrieve water data. This code needs to be upgraded to meet 21st century's standard.
+- [ ] Replace "reading data from tab delimited files" with "reading data from JSON format data returned from on-demand requests to NWIS"
 
-- [] Replace "reading data from tab delimited files" with "reading data from JSON format data returned from on-demand requests to NWIS"
+According to the [USGS National Water Information System Automated Retrieval FAQ page](https://help.waterdata.usgs.gov/faq/automated-retrievals), "downloading tab delimited data files" method to retrieve water data is an outdated "20th century approach" and is not recommended. Instead, XML/JSON-based approach is the modern way to retrieve water data. This code needs to be upgraded to meet 21st century's standard.
 
 ## Required packages
 
