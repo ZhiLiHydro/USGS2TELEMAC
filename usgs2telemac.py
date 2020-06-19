@@ -1,301 +1,414 @@
+# coding: utf-8
 """
-Author: Z. Li
-License: MIT License
+USGS2TELEMAC
+MIT License
+Author: Zhi Li, Univ. of Illinois Urbana-Champaign
+Contact: zhil2[at]illinois[dot]edu
+
 """
-from __future__ import division
-from __future__ import print_function
+
+import sys
+import platform
+import webbrowser
+from urllib import request, error
+from base64 import encodebytes
+import tkinter as tk
+from tkinter import ttk
+from tkinter import messagebox
+import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
-import numpy as np
-import threading
-import itertools
-import datetime
-import time
-import sys
-import os
+import hydrofunctions as hf
 
-
-def woking_animate():
-    """
-    Manage loading wheel.
-
-    """
-    for c in itertools.cycle(['|', '/', '-', '\\']):
-        if done:
-            sys.stdout.flush()
-            break
-        sys.stdout.write('\rWorking ' + c)
-        sys.stdout.flush()
-        time.sleep(0.1)
-    sys.stdout.write('\rDone!    ')
-
-
-def num_non_data_lines(fname):
-    """
-    Count the number of non-data lines in the beginning of data file.
-
-    Parameters
-    ----------
-    fname : str
-        The file name of one gauging station.
-
-    Returns
-    -------
-    i : non-negative integer
-        The number of non-data lines.
-    """
-    with open(fname, 'r') as f:
-        lines = f.readlines()
-        i = 0
-        for each_line in lines:
-            if each_line[0] == '#':
-                i = i + 1
-            else:
-                break
-    i = i + 2  # USGS writes 2 lines after # lines and data lines
-    return i
-
-
-def find_longest(fnames):
-    """
-    Find the largest number of rows among all gauging stations.
-
-    Parameters
-    ----------
-    fnames : list
-        The file names of all gauging stations.
-
-    Returns
-    -------
-    lg : non-negative integer
-        The largest number of rows.
-    """
-    l = np.zeros(len(fnames))
-    i = 0
-    for fname in fnames:
-        n = num_non_data_lines(fname)
-        df = pd.read_csv(fname, sep='\t', skiprows=n, header=None)
-        l[i] = len(df[0])
-        i = i + 1
-    lg = int(np.max(l))
-    return lg
-
-
-def extract_time_series(fname, col_time, col_data):
-    """
-    Extract the time series of discharge data
-    or gauge height data from one file.
-
-    Parameters
-    ----------
-    fname : str
-        The file name of one gauging station.
-    col_time : non-negative integer, optional
-        The column number of date time data.
-    col_data : non-negative integer, optional
-        The column number of discharge data or gauge height data.
-
-    Returns
-    -------
-    t_in_seconds : 1d numpy array
-        The time series in seconds converted from date and time data.
-    d : 1d numpy array
-        The time series of discharge data or gauge height data.
-    """
-    n = num_non_data_lines(fname)
-    df = pd.read_csv(fname, sep='\t', skiprows=n, header=None)
-    t_in_seconds = np.zeros(len(df[col_time]))
-    for i in range(1, len(df[col_time])):
-        s1 = datetime.datetime.strptime(df[col_time][i - 1], '%Y-%m-%d %H:%M')
-        s2 = datetime.datetime.strptime(df[col_time][i], '%Y-%m-%d %H:%M')
-        dt = s2 - s1
-        t_in_seconds[i] = t_in_seconds[i - 1] + dt.total_seconds()
-    d = df[col_data].to_numpy()
-    return t_in_seconds, d
-
-
-def generate_A(fnames, col_num, types, datum):
-    """
-    Generate the matrix before interpolation.
-
-    Parameters
-    ----------
-    fnames : list
-        The file names of all gauging stations.
-    datum : 1d numpy array
-        The datum conversions of all gauging stations
-        (only for gauge height data).
-
-    Returns
-    -------
-    A : 2d numpy array
-        The matrix before interpolation.
-    """
-    L = find_longest(fnames)
-    A = np.full((L, len(fnames) * 2), np.nan)
-    i = 0
-    for fname in fnames:
-        t, d = extract_time_series(fname, 2, col_num[i])
-        if types[i + 1][0] == 'Q':
-            d = d * 0.3048**3  # convert from cfs to cms
-        elif types[i + 1][0] == 'S':
-            d = d * 0.3048  # convert from ft to m
-        if np.isnan(datum[i]) == False:
-            d = d + datum[i]
-        A[:len(t), i * 2] = t
-        A[:len(t), i * 2 + 1] = d
-        i = i + 1
-    return A
-
-
-def interpol(v):
-    """
-    Interpolte data to higher temporal resolution.
-
-    Parameters
-    ----------
-    v : 1d numpy array
-        The data before interpolation.
-
-    Returns
-    -------
-    A : 2d numpy array
-        The data after interpolation.
-    """
-    j = 0
-    index = np.zeros(sum(~np.isnan(v)))
-    index = index.astype(int)
-    for i in range(np.size(v)):
-        if np.isnan(v[i]) == False:
-            index[j] = i
-            j = j + 1
-    for i in range(1, j):
-        a = v[index[i - 1]]
-        b = v[index[i]]
-        m = 1
-        for k in range(index[i - 1] + 1, index[i]):
-            v[k] = a + (b - a) * m / (index[i] - index[i - 1])
-            m = m + 1
-    for i in range(np.size(v)):
-        if np.isnan(v[i]):
-            v[i] = v[i - 1]
-    return v
-
-
-def generate_R(A):
-    """
-    Generate the final output matrix ready for TELEMAC.
-
-    Parameters
-    ----------
-    A : 2d numpy array
-        The matrix before interpolation.
-
-    Returns
-    -------
-    R : 2d numpy array
-        The matrix after interpolation and ready for TELEMAC.
-    """
-    col = int(np.size(A[0, :]) / 2) + 1
-    row = np.size(A[:, 0])
-    R = np.full((row, col), np.nan)
-    for i in range(np.size(A[-1, :])):
-        if np.isnan(A[-1, i]) == False:
-            break
-    R[:, 0] = np.copy(A[:, i])
-    R[:, int(i / 2) + 1] = np.copy(A[:, i + 1])
-    for j in range(1, col):
-        if np.isnan(R[0, j]):
-            for i in range(row):
-                if np.isnan(A[i, (j - 1) * 2]):
-                    break
-                else:
-                    index = np.searchsorted(R[:, 0], A[i, (j - 1) * 2])
-                    R[index, j] = A[i, j * 2 - 1]
-            R[:, j] = interpol(R[:, j])
-        else:
-            continue
-    return R
-
-
-def load_user_input():
-    """
-    Load gauging station names, types (Q or H), units and
-    datum conversions from user input file.
-
-    """
-    with open('user_input.csv', 'r') as f:
-        lines = f.readlines()
-        fnames = lines[0].replace('\n', '').split(',')
-        col_num = np.asarray(lines[1].split(','), dtype=np.int)
-        types = lines[2].replace('\n', '').split(',')
-        units = lines[3].replace('\n', '').split(',')
-        datum = np.asarray(lines[4].split(','), dtype=np.float)
-        types.insert(0, 'T')
-        units.insert(0, 's')
-    return fnames, col_num, types, units, datum
-
-
-def plot(R, fnames, types):
-    """
-    Plot all (divided into H and Q two categories).
-
-    """
-    plt.figure(figsize=(10, 8))
-    plt.subplot(2, 1, 1)
-    le = []
-    for i in range(len(fnames)):
-        if types[i + 1][0] == 'S':
-            plt.plot(R[:, 0], R[:, i + 1])
-            le.append(fnames[i])
-    plt.xlabel('Time [s]')
-    plt.ylabel('Water level [m]')
-    plt.grid()
-    plt.legend(le)
-    plt.title('Water levels')
-    plt.subplot(2, 1, 2)
-    le = []
-    for i in range(len(fnames)):
-        if types[i + 1][0] == 'Q':
-            plt.plot(R[:, 0], R[:, i + 1])
-            le.append(fnames[i])
-    plt.xlabel('Time [s]')
-    plt.ylabel('Discharge [cms]')
-    plt.grid()
-    plt.legend(le)
-    plt.title('Discharges')
-    plt.tight_layout()
-    plt.show()
-
+plt.rcParams['font.family'] = 'Times New Roman'
 
 def main():
-    try:
-        os.remove('liquid_boundary.xls')
-        print('\rPrevious output file deleted!')
-    except FileNotFoundError:
+    root = tk.Tk()
+    root.title('USGS2TELEMAC')
+    root.resizable(0, 0)
+    
+    if platform.system() == 'Darwin':
         pass
-    global done
-    done = False
-    t = threading.Thread(target=woking_animate)
-    t.start()
+    else:
+        pass
+        
+    msg = tk.Message(
+        root,
+        text='Setup',
+        bg='light cyan',
+        font='System 12 bold',
+        width=500,
+        relief='raised')
+    msg.pack()
+
+    row = tk.Frame(root)
+    row.pack(side='top')
+
+
+    unitvar = tk.IntVar()
+    unit = tk.Radiobutton(
+        row,
+        text='m, m3/s',
+        width=10,
+        font='System 10',
+        variable=unitvar,
+        value=1)
+    unit.pack(side='left') 
+    unit.select()
+    unit = tk.Radiobutton(
+        row,
+        text='ft, ft3/s',
+        width=10,
+        font='System 10',
+        variable=unitvar,
+        value=0)
+    unit.pack(side='left')
+
+
+    row = tk.Frame(root)
+    row.pack(side='top')
+
+    pvar= tk.IntVar()
+    p = tk.Radiobutton(
+        row,
+        text='Days from now',
+        width=15,
+        font='System 10',
+        variable=pvar,
+        value=1)
+    p.pack(side='left') 
+    p.select()
+
+    periodvar = tk.StringVar()
+    period = ttk.Combobox(
+        row,
+        font='System 10',
+        width=3,
+        textvariable=periodvar)
+    period['values'] = ('14', '30', '365')
+    period.set('7')
+    period.pack(side='left')
+
+    row = tk.Frame(root)
+    row.pack(side='top')
+    
+    p = tk.Radiobutton(
+        row,
+        text='Begin and End',
+        width=15,
+        font='System 10',
+        variable=pvar,
+        value=0)
+    p.pack(side='left')
+
+    row = tk.Frame(root)
+    row.pack(side='top')
+    
+    row = tk.Frame(root)
+    row.pack(side='top')
+
+    tk.Label(
+        row,
+        text='Begin (YYYY-MM-DD):',
+        width=20,
+        font='System 10',
+        anchor='w').pack(side='left')
+    
+    beginvar = tk.StringVar()
+    begin = ttk.Combobox(
+        row,
+        font='System 10',
+        width=10,
+        textvariable=beginvar)
+    begin.set('2020-05-01')
+    begin.pack(side='left')
+
+    row = tk.Frame(root)
+    row.pack(side='top')
+
+    tk.Label(
+        row,
+        text='End (YYYY-MM-DD):',
+        width=20,
+        font='System 10',
+        anchor='w').pack(side='left')
+    
+    endvar = tk.StringVar()
+    end = ttk.Combobox(
+        row,
+        font='System 10',
+        width=10,
+        textvariable=endvar)
+    end.set('2020-06-01')
+    end.pack(side='left')
+    
+
+    stationvar = []
+    bcvar = []
+    shiftvar = []
+    presetstations = ['05536085','05536580','05536500','05536340','05536290','04087440','05536995']
+
+    msg = tk.Message(
+        root,
+        text='Station Info',
+        bg='light cyan',
+        font='System 12 bold',
+        width=500,
+        relief='raised')
+    msg.pack()
+
+    for i in range(20):
+        row = tk.Frame(root)
+        row.pack(side='top', padx=20)
+        
+        tk.Label(
+            row,
+            text=str(i+1).zfill(2)+' Station Number:',
+            width=17,
+            font='System 10',
+            anchor='w').pack(side='left')
+        
+        stationvar.append(tk.StringVar())
+        station = ttk.Combobox(
+            row,
+            font='System 10',
+            width=9,
+            textvariable=stationvar[i])
+        station.set(presetstations[i] if i < len(presetstations) else 0)
+        station.pack(side='left')
+        
+        tk.Label(
+            row,
+            text='      '+str(i+1).zfill(2)+' BC Type:',
+            width=13,
+            font='System 10',
+            anchor='w').pack(side='left')
+
+        bcvar.append(tk.StringVar())
+        BC = tk.Radiobutton(
+            row,
+            text='Q',
+            width=2,
+            font='System 10',
+            variable=bcvar[i],
+            value='Q')
+        BC.pack(side='left') 
+        BC.select()
+        BC = tk.Radiobutton(
+            row,
+            text='H',
+            width=2,
+            font='System 10',
+            variable=bcvar[i],
+            value='H')
+        BC.pack(side='left')
+
+
+        tk.Label(
+            row,
+            text='      '+str(i+1).zfill(2)+' Datum Shift:',
+            width=17,
+            font='System 10',
+            anchor='w').pack(side='left')
+        
+        shiftvar.append(tk.DoubleVar())
+        shift = ttk.Combobox(
+            row,
+            font='System 10',
+            width=6,
+            textvariable=shiftvar[i])
+        shift.set('0')
+        shift.pack(side='left')
+
+        row = tk.Frame(root)
+        row.pack(side='top')
+        
+
+################ BUTTONS ################ 
+    row = tk.Frame(root)
+    row.pack(side='top',pady=3)
+    
+    row = tk.Frame(root)
+    row.pack(side='top')
+
+
+    tk.Label(
+        row,
+        text='Step 1: ',
+        width=6,
+        font='System 10',
+        anchor='w').pack(side='left')
+
+
+    def gen():
+        stationVar = [station.get() for station in stationvar]
+        bcVar = [bc.get() for bc in bcvar]
+        shiftVar = [shift.get() for shift in shiftvar]
+        info = pd.DataFrame(data={'stationVar': stationVar, 'bcVar': bcVar, 'shiftVar': shiftVar})
+        info = info[info.stationVar != '0']
+        print(info)
+        info.to_csv('stationInfo.csv',index=False)
+        messagebox.showinfo(
+            message='\'stationInfo.csv\' has been generated',
+            icon='info')
+
+    tk.Button(
+            row, 
+            text='Generate stationInfo.csv', 
+            font='System 11 bold', 
+            command=gen,
+            padx=6,
+            pady=1).pack(side='left',padx=6,pady=1)
+
+
+    row = tk.Frame(root)
+    row.pack(side='top')
+
+    tk.Label(
+        row,
+        text='Step 2: ',
+        width=6,
+        font='System 10',
+        anchor='w').pack(side='left')
+
+
+    def run():
+        if pvar.get():
+            messagebox.showinfo(
+                message='Going to ask USGS for '+periodvar.get()+'-day data... May take some time...',
+                icon='info')
+        else:
+            messagebox.showinfo(
+                message='Going to ask USGS for data from '+beginvar.get()+' to '+endvar.get()+'... May take some time...',
+                icon='info')
+        info = pd.read_csv('stationInfo.csv', dtype={'stationVar':str, 'bcVar':str, 'shiftVar':np.float64})
+        q = info[info.bcVar == 'Q']
+        h = info[info.bcVar == 'H']
+        print('='*30)
+        print(q)
+        print('='*30)
+        print(h)
+        print('='*30)
+        print('Contacting USGS...')
+        if pvar.get():
+            dfq = hf.NWIS(q.stationVar.tolist(), 'iv', period='P'+periodvar.get()+'D', parameterCd='00060').get_data().df()
+            dfh = hf.NWIS(h.stationVar.tolist(), 'iv', period='P'+periodvar.get()+'D', parameterCd='00065').get_data().df()
+        else:
+            dfq = hf.NWIS(q.stationVar.tolist(), 'iv', beginvar.get(), endvar.get(), parameterCd='00060').get_data().df()
+            dfh = hf.NWIS(h.stationVar.tolist(), 'iv', beginvar.get(), endvar.get(), parameterCd='00065').get_data().df()
+        for i, station in enumerate(q.stationVar.tolist()):
+            dfq.drop(dfq.columns[2*(len(q.stationVar)-i)-1], axis=1, inplace=True)
+        for i, station in enumerate(h.stationVar.tolist()):
+            dfh.drop(dfh.columns[2*(len(h.stationVar)-i)-1], axis=1, inplace=True)
+        if unitvar.get():
+            dfq *= 0.3048**3
+            dfh *= 0.3048
+        for i, shift in enumerate(h.shiftVar.tolist()):
+            if shift != 0:
+                dfh['USGS:'+h.stationVar.tolist()[i]+':00065:00000'] += shift
+        df = dfq.merge(dfh,left_index=True,right_index=True,how='outer')
+        df.to_csv('usgs2telemac_raw_data.xls', sep='\t', float_format='%.4f', na_rep='nan')
+        
+        ax = dfh.interpolate(limit_direction='both').plot(linewidth=1, marker='o', markersize=1)
+        ax.grid(color='grey', linestyle=':')
+        plt.tight_layout()
+        if unitvar.get():
+            plt.ylabel('Gage height, meter')
+        else:
+            plt.ylabel('Gage height, feet')
+        plt.savefig('H.png',dpi=150)
+        plt.close()
+        
+        ax = dfq.interpolate(limit_direction='both').plot(linewidth=1, marker='o', markersize=1)
+        ax.grid(color='grey', linestyle=':')
+        plt.tight_layout()
+        if unitvar.get():
+            plt.ylabel('Discharge, cubic meter per second')
+        else:
+            plt.ylabel('Discharge, cubic feet per second')
+        plt.savefig('Q.png',dpi=150)
+        plt.close()
+        
+        t_in_seconds = np.zeros(len(df))
+        for i in range(1, len(df)):
+            dt = df.index.array[i] - df.index.array[i-1]
+            t_in_seconds[i] = t_in_seconds[i-1] + dt.total_seconds()
+        df.set_index(t_in_seconds, inplace=True)
+        df.interpolate(limit_direction='both', inplace=True)
+        df.to_csv('usgs2telemac_liq_boundary.xls', sep='\t', header=False, float_format='%.4f', na_rep='nan')
+        print('Done')
+        messagebox.showinfo(
+            message='job done\n\n\'usgs2telemac_raw_data.xls\' and \'usgs2telemac_liq_boundary.xls\' have been written',
+            icon='info')
+
+    tk.Button(
+        row,
+        text='Ask USGS for data & Generate TELEMAC liquid boundary file',
+        font='System 11 bold',
+        command=run,
+        padx=5,
+        pady=1,
+        wraplength=150).pack(side='left',padx=6,pady=1)
+
+    row = tk.Frame(root)
+    row.pack(side='top')
+
+            
+    tk.Button(
+        row, 
+        text='Quit', 
+        font='System 11 bold', 
+        command=lambda:root.destroy(),
+        padx=10,
+        pady=1).pack(side='left',padx=6,pady=1)
+
+    row = tk.Frame(root)
+    row.pack(side='top')
+ 
+    def open_github(): 
+        webbrowser.open('https://github.com/ZhiLiHydro/USGS2TELEMAC')
+
+    tk.Label(
+        row,
+        text='visit',
+        width=5,
+        font='System 10',
+        anchor='e').pack(side='left')
+
+    urlok = True
     try:
-        fnames, col_num, types, units, datum = load_user_input()
-        A = generate_A(fnames, col_num, types, datum)
-        R = generate_R(A)
-        h = '#\n' + '\t'.join(types) + '\n' + '\t'.join(units)
-        np.savetxt('liquid_boundary.xls', R, delimiter='\t',
-                   fmt='%.4f', header=h, comments='')
-    except TypeError:
-        print('\rFound TypeError!')
-    except FileNotFoundError:
-        print('\rFound FileNotFoundError!')
-    except OSError:
-        print('\rFound other type of OSError!')
-    except BaseException:
-        print('\rFound other type of error!')
-    done = True
-    plot(R, fnames, types)
+        u = request.urlopen('https://github.githubassets.com/images/modules/logos_page/GitHub-Logo.png')
+    except error.URLError:
+        urlok = False
+    if urlok:
+        icon = u.read()
+        u.close()
+        icon = tk.PhotoImage(data=encodebytes(icon)).subsample(15, 15)
+        tk.Button(
+            row,
+            font='System 11 bold', 
+            command=open_github,
+            width=60,
+            height=25,
+            image=icon).pack(side='left')
+    else:      
+        tk.Button(
+            row,
+            text='GitHub',
+            font='System 11 bold', 
+            command=open_github,
+            padx=15,
+            pady=1).pack(side='left',padx=3,pady=1)
 
+    tk.Label(
+        row,
+        text='for README',
+        width=10,
+        font='System 10',
+        anchor='w').pack(side='left')
+    
+    root.mainloop()
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
+    
