@@ -307,7 +307,7 @@ def main():
             if shift != 0:
                 dfh['USGS:'+h.stationVar.tolist()[i]+':00065:00000'] += shift
         df = dfq.merge(dfh,left_index=True,right_index=True,how='outer')
-        df.to_csv('usgs2telemac_raw_data.xls', sep='\t', float_format='%.4f', na_rep='nan')
+        df.to_csv('usgs2telemac_raw_data.xls', sep='\t', float_format='%.6f', na_rep='nan')
         
         ax = dfh.interpolate(limit_direction='both').plot(linewidth=1, marker='o', markersize=1)
         ax.grid(color='grey', linestyle=':')
@@ -335,7 +335,15 @@ def main():
             t_in_seconds[i] = t_in_seconds[i-1] + dt.total_seconds()
         df.set_index(t_in_seconds, inplace=True)
         df.interpolate(limit_direction='both', inplace=True)
-        df.to_csv('usgs2telemac_liq_boundary.xls', sep='\t', header=False, float_format='%.4f', na_rep='nan')
+        head = '#\nT\t'+'\t'.join(['Q('+str(index+1)+')' for index in q.index.values])+'\t'
+        head += '\t'.join(['SL('+str(index+1)+')' for index in h.index.values])+'\n'
+        if unitvar.get():
+            head += 's\t'+'m3/s\t'*len(q)+'m\t'*len(h)+'\n'
+        else:
+            head += 's\t'+'ft3/s\t'*len(q)+'ft\t'*len(h)+'\n'
+        with open('usgs2telemac_liq_boundary.xls', 'w') as f: 
+            f.write(head)
+        df.to_csv('usgs2telemac_liq_boundary.xls', mode='a', sep='\t', header=False, float_format='%.6f', na_rep='nan')
         print('Done')
         messagebox.showinfo(
             message='job done\n\n\'usgs2telemac_raw_data.xls\' and \'usgs2telemac_liq_boundary.xls\' have been written',
