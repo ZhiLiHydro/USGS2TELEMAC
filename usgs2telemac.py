@@ -28,9 +28,9 @@ def main():
     root.resizable(0, 0)
     
     if platform.system() == 'Darwin':
-        pass
+        w = 4
     else:
-        pass
+        w = 2
         
     msg = tk.Message(
         root,
@@ -157,7 +157,7 @@ def main():
         relief='raised')
     msg.pack()
 
-    for i in range(20):
+    for i in range(16):
         row = tk.Frame(root)
         row.pack(side='top', padx=20)
         
@@ -188,7 +188,7 @@ def main():
         BC = tk.Radiobutton(
             row,
             text='Q',
-            width=2,
+            width=w,
             font='System 10',
             variable=bcvar[i],
             value='Q')
@@ -197,7 +197,7 @@ def main():
         BC = tk.Radiobutton(
             row,
             text='H',
-            width=2,
+            width=w,
             font='System 10',
             variable=bcvar[i],
             value='H')
@@ -215,7 +215,7 @@ def main():
         shift = ttk.Combobox(
             row,
             font='System 10',
-            width=6,
+            width=8,
             textvariable=shiftvar[i])
         shift.set('0')
         shift.pack(side='left')
@@ -291,11 +291,11 @@ def main():
         print('='*30)
         print('Contacting USGS...')
         if pvar.get():
-            dfq = hf.NWIS(q.stationVar.tolist(), 'iv', period='P'+periodvar.get()+'D', parameterCd='00060').get_data().df()
-            dfh = hf.NWIS(h.stationVar.tolist(), 'iv', period='P'+periodvar.get()+'D', parameterCd='00065').get_data().df()
+            dfq = hf.NWIS(q.stationVar.tolist(), 'iv', period='P'+periodvar.get()+'D', parameterCd='00060').df()
+            dfh = hf.NWIS(h.stationVar.tolist(), 'iv', period='P'+periodvar.get()+'D', parameterCd='00065').df()
         else:
-            dfq = hf.NWIS(q.stationVar.tolist(), 'iv', beginvar.get(), endvar.get(), parameterCd='00060').get_data().df()
-            dfh = hf.NWIS(h.stationVar.tolist(), 'iv', beginvar.get(), endvar.get(), parameterCd='00065').get_data().df()
+            dfq = hf.NWIS(q.stationVar.tolist(), 'iv', beginvar.get(), endvar.get(), parameterCd='00060').df()
+            dfh = hf.NWIS(h.stationVar.tolist(), 'iv', beginvar.get(), endvar.get(), parameterCd='00065').df()
         for i, station in enumerate(q.stationVar.tolist()):
             dfq.drop(dfq.columns[2*(len(q.stationVar)-i)-1], axis=1, inplace=True)
         for i, station in enumerate(h.stationVar.tolist()):
@@ -309,9 +309,9 @@ def main():
         df = dfq.merge(dfh,left_index=True,right_index=True,how='outer')
         df.to_csv('usgs2telemac_raw_data.xls', sep='\t', float_format='%.6f', na_rep='nan')
         
-        ax = dfh.interpolate(limit_direction='both').plot(linewidth=1, marker='o', markersize=1)
+        ax = dfh.interpolate(limit_direction='both').plot(linewidth=.75, marker='o', markersize=.75)
         ax.grid(color='grey', linestyle=':')
-        plt.tight_layout()
+        
         if unitvar.get():
             plt.ylabel('Gage height, meter')
         else:
@@ -319,9 +319,9 @@ def main():
         plt.savefig('H.png',dpi=150)
         plt.close()
         
-        ax = dfq.interpolate(limit_direction='both').plot(linewidth=1, marker='o', markersize=1)
+        ax = dfq.interpolate(limit_direction='both').plot(linewidth=.75, marker='o', markersize=.75)
         ax.grid(color='grey', linestyle=':')
-        plt.tight_layout()
+        
         if unitvar.get():
             plt.ylabel('Discharge, cubic meter per second')
         else:
