@@ -202,6 +202,8 @@ def main():
             variable=bcvar[i],
             value='H')
         BC.pack(side='left')
+        if station.get() == '04087440' or station.get() == '05536995':
+            BC.select()
 
 
         tk.Label(
@@ -218,7 +220,10 @@ def main():
             width=8,
             textvariable=shiftvar[i])
         shift.set('0')
+        if station.get() == '05536995':
+            shift.set('-8.361')
         shift.pack(side='left')
+        
 
         row = tk.Frame(root)
         row.pack(side='top')
